@@ -5,6 +5,7 @@ library(bslib)
 library(DT)
 library(dplyr)
 library(sandwich)
+library(outstandR)
 
 # Define UI
 ui <- page_navbar(
@@ -81,11 +82,11 @@ ui <- page_navbar(
 #
 server <- function(input, output, session) {
   
-  # Reactive values to store the uploaded data
+  # Reactive values to store uploaded data
   ipd_data <- reactiveVal(NULL)
   agg_data <- reactiveVal(NULL)
   
-  # Process the uploaded IPD file
+  # Process uploaded IPD file
   observeEvent(input$ipd_file, {
     req(input$ipd_file)
     tryCatch({
@@ -96,7 +97,7 @@ server <- function(input, output, session) {
     })
   })
   
-  # Process the uploaded aggregate data file
+  # Process uploaded aggregate data file
   observeEvent(input$agg_file, {
     req(input$agg_file)
     tryCatch({
@@ -116,8 +117,12 @@ server <- function(input, output, session) {
       card_header("Variable Selection"),
       selectInput("outcome_var", "Outcome Variable:", choices = names(ipd)),
       selectInput("treatment_var", "Treatment Variable:", choices = names(ipd)),
-      checkboxGroupInput("covariates", "Covariates for Adjustment:", 
-                         choices = setdiff(names(ipd), c(input$outcome_var, input$treatment_var)))
+      checkboxGroupInput("progfactors", "Prognostic variables:", 
+                         choices = names(ipd)),
+                         # choices = setdiff(names(ipd), c(input$outcome_var, input$treatment_var))),  ##TODO: limits selection
+      checkboxGroupInput("effmodifier", "Effect modifiers:", 
+                         # choices = setdiff(names(ipd), c(input$outcome_var, input$treatment_var)))
+                         choices = names(ipd)),
     )
   })
   
@@ -132,81 +137,12 @@ server <- function(input, output, session) {
     datatable(agg_data(), options = list(pageLength = 5, scrollX = TRUE))
   })
   
-  # Function to run MAIC
-  run_maic <- function(ipd, agg, outcome_var, treatment_var, covariates, data_type, outcome_scale) {
-    # Extract aggregate data means/proportions for matching
-    agg_means <- as.numeric(agg[1, covariates])
-    
-    # Function to compute weights
-    X <- as.matrix(ipd[, covariates])
-    
-    # Optimization function to find alpha
-    loglik <- function(alpha) {
-      sum(exp(X %*% alpha)) - sum(agg_means * alpha)
-    }
-    
-    # Find optimal alpha using optimization
-    res <- optim(rep(0, length(covariates)), loglik, method = "BFGS")
-    alpha <- res$par
-    
-    # Calculate weights
-    weights <- exp(X %*% alpha)
-    
-    # Normalize weights
-    weights <- weights * (nrow(ipd) / sum(weights))
-    
-    # Apply weights based on data type and outcome scale
-    if (data_type == "Binary") {
-      # For binary outcomes, use weighted logistic regression
-      formula <- as.formula(paste(outcome_var, "~", treatment_var))
-      model <- glm(formula, data = ipd, family = binomial(), weights = weights)
-      
-      # Extract coefficient and SE
-      coef <- coef(model)[treatment_var]
-      vcov_robust <- sandwich::vcovHC(model, type = "HC0")
-      se <- sqrt(diag(vcov_robust))[treatment_var]
-      
-      if (outcome_scale == "rr") {
-        # Convert log odds ratio to log relative risk (approximation)
-        p0 <- weighted.mean(ipd[[outcome_var]][ipd[[treatment_var]] == 0], 
-                           weights[ipd[[treatment_var]] == 0])
-        coef <- log(exp(coef) / (1 - p0 + p0 * exp(coef)))
-        # Approximation for SE
-        se <- se * abs(coef / coef(model)[treatment_var])
-      }
-    } else if (data_type == "Continuous") {
-      # For continuous outcomes, use weighted linear regression
-      formula <- as.formula(paste(outcome_var, "~", treatment_var))
-      model <- lm(formula, data = ipd, weights = weights)
-      
-      coef <- coef(model)[treatment_var]
-      vcov_robust <- sandwich::vcovHC(model, type = "HC0")
-      se <- sqrt(diag(vcov_robust))[treatment_var]
-    }
-    
-    # Calculate p-value and CI
-    p_value <- 2 * (1 - pnorm(abs(coef / se)))
-    lower_ci <- coef - 1.96 * se
-    upper_ci <- coef + 1.96 * se
-    
-    return(list(
-      Method = "MAIC",
-      Estimate = coef,
-      SE = se,
-      Lower_CI = lower_ci,
-      Upper_CI = upper_ci,
-      P_value = p_value
-    ))
-  }
-  
-  # Run analysis when button is clicked
+  # Run analysis when button clicked
   analysis_results <- eventReactive(input$run_analysis, {
     req(ipd_data(), agg_data(), input$outcome_var, input$treatment_var, length(input$models) > 0)
     
-    # Show notification
     showNotification("Running analysis...", type = "message", duration = NULL, id = "analysis")
     
-    # Initialize results dataframe
     results <- data.frame(
       Method = character(),
       Estimate = numeric(),
@@ -251,7 +187,7 @@ server <- function(input, output, session) {
       ))
     }
     
-    # Remove the notification when complete
+    # remove when complete
     removeNotification(id = "analysis")
     
     return(results)
@@ -294,5 +230,5 @@ server <- function(input, output, session) {
   })
 }
 
-# Run application
+# run application
 shinyApp(ui = ui, server = server)
