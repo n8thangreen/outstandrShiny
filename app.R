@@ -78,7 +78,7 @@ ui <- page_navbar(
   )
 )
 
-# Define server logic
+#
 server <- function(input, output, session) {
   
   # Reactive values to store the uploaded data
@@ -294,5 +294,5 @@ server <- function(input, output, session) {
   })
 }
 
-# Run the application
+# Run application
 shinyApp(ui = ui, server = server)
