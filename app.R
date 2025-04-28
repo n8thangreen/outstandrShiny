@@ -16,7 +16,7 @@ ui <- page_navbar(
     title = "Data Input & Analysis",
     page_sidebar(
       sidebar = sidebar(
-        width = 300,
+        width = 400,
         
         # File inputs
         card(
