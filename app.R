@@ -46,9 +46,9 @@ ui <- page_navbar(
         card(
           card_header("Outcome Scale"),
           radioButtons("outcome_scale", "Select Outcome Scale:",
-                      choices = c("Log Odds Ratio" = "lor", 
-                                 "Risk Ratio" = "rr"),
-                      selected = "lor")
+                      choices = c("Log Odds Ratio" = "log_odds", 
+                                 "Risk Ratio" = "log_relative_risk"),
+                      selected = "log_odds")
         ),
         
         # Variables selection UI will be generated dynamically based on data
@@ -145,46 +145,62 @@ server <- function(input, output, session) {
     
     results <- data.frame(
       Method = character(),
+      Treatments = numeric(),
       Estimate = numeric(),
-      SE = numeric(),
-      Lower_CI = numeric(),
-      Upper_CI = numeric(),
-      P_value = numeric(),
-      stringsAsFactors = FALSE
+      Std.Error = numeric(),
+      lower.0.95 = numeric(),
+      upper.0.95 = numeric()
     )
+    
+    if (data_type() == "Binary") {
+      ffamily <- binomial()  
+    } else if (data_type() == "Continuous") {
+      ffamily <- gaussian()  
+    }
+    
+    form <- glue::glue(
+      "{outcome_var} ~ {progfactors} + {treatment_var} + {treatment_var}:{effmodifier}")
     
     # Run MAIC if selected
     if ("maic" %in% input$models) {
-      maic_result <- run_maic(
-        ipd_data(), 
-        agg_data(), 
-        input$outcome_var, 
-        input$treatment_var, 
-        input$covariates, 
-        input$data_type, 
-        input$outcome_scale
-      )
+      
+      maic_strategy <- strategy_maic(formula = form, family = ffamily)
+      
+      maic_result <- outstandR::outstandR(AC.IPD = ipd_data(),
+                                          BC.ALD = agg_data(),
+                                          strategy = maic_strategy,
+                                          scale = outcome_scale())
+      contrasts <- maic_result$contrasts
       
       results <- rbind(results, data.frame(
-        Method = maic_result$Method,
-        Estimate = maic_result$Estimate,
-        SE = maic_result$SE,
-        Lower_CI = maic_result$Lower_CI,
-        Upper_CI = maic_result$Upper_CI,
-        P_value = maic_result$P_value
-      ))
+        Method = "MAIC",
+        Treatments = names(contrasts$means),
+        Estimate = unlist(contrasts$means),
+        Std.Error = unlist(contrasts$variances),
+        lower.0.95 = sapply(contrasts$CI, \(x) x[1]),
+        upper.0.95 = sapply(contrasts$CI, \(x) x[2]))
+      )
     }
     
     # Note: STC implementation will be added later
     if ("stc" %in% input$models) {
+      
+      stc_strategy <- strategy_stc(formula = form, family = ffamily)
+      
+      stc_result <- outstandR::outstandR(AC.IPD = ipd_data(),
+                                          BC.ALD = agg_data(),
+                                          strategy = stc_strategy,
+                                          scale = outcome_scale())
+      contrasts <- stc_result$contrasts
+      
       results <- rbind(results, data.frame(
-        Method = "STC (Not implemented yet)",
-        Estimate = NA,
-        SE = NA,
-        Lower_CI = NA,
-        Upper_CI = NA,
-        P_value = NA
-      ))
+        Method = "STC",
+        Treatments = names(contrasts$means),
+        Estimate = unlist(contrasts$means),
+        Std.Error = unlist(contrasts$variances),
+        lower.0.95 = sapply(contrasts$CI, \(x) x[1]),
+        upper.0.95 = sapply(contrasts$CI, \(x) x[2]))
+      )
     }
     
     # remove when complete
@@ -224,8 +240,8 @@ server <- function(input, output, session) {
       rownames = FALSE,
       caption = paste0("Results using ", 
                       switch(input$outcome_scale,
-                             "lor" = "Log Odds Ratio",
-                             "rr" = "Risk Ratio"))
+                             "log_odds" = "Log Odds Ratio",
+                             "log_relative_risk" = "Log Risk Ratio"))
     )
   })
 }
