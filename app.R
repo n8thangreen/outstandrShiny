@@ -139,7 +139,7 @@ server <- function(input, output, session) {
   
   # Run analysis when button clicked
   analysis_results <- eventReactive(input$run_analysis, {
-    req(ipd_data(), agg_data(), input$outcome_var, input$treatment_var, length(input$models) > 0)
+    req(ipd_data(), agg_data(), input$data_type, input$outcome_var, input$treatment_var, length(input$models) > 0)
     
     showNotification("Running analysis...", type = "message", duration = NULL, id = "analysis")
     
@@ -152,14 +152,16 @@ server <- function(input, output, session) {
       upper.0.95 = numeric()
     )
     
-    if (data_type() == "Binary") {
+    if (input$data_type == "Binary") {
       ffamily <- binomial()  
-    } else if (data_type() == "Continuous") {
+    } else if (input$data_type == "Continuous") {
       ffamily <- gaussian()  
     }
     
-    form <- glue::glue(
-      "{outcome_var} ~ {progfactors} + {treatment_var} + {treatment_var}:{effmodifier}")
+    ##TODO: not character...
+    form <- as.formula(
+      glue::glue(
+        "{input$outcome_var} ~ {input$progfactors} + {input$treatment_var} + {input$treatment_var}:{input$effmodifier}"))
     
     # Run MAIC if selected
     if ("maic" %in% input$models) {
@@ -169,7 +171,7 @@ server <- function(input, output, session) {
       maic_result <- outstandR::outstandR(AC.IPD = ipd_data(),
                                           BC.ALD = agg_data(),
                                           strategy = maic_strategy,
-                                          scale = outcome_scale())
+                                          scale = input$outcome_scale)
       contrasts <- maic_result$contrasts
       
       results <- rbind(results, data.frame(
@@ -190,7 +192,7 @@ server <- function(input, output, session) {
       stc_result <- outstandR::outstandR(AC.IPD = ipd_data(),
                                           BC.ALD = agg_data(),
                                           strategy = stc_strategy,
-                                          scale = outcome_scale())
+                                          scale = input$outcome_scale)
       contrasts <- stc_result$contrasts
       
       results <- rbind(results, data.frame(
