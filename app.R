@@ -149,19 +149,35 @@ server <- function(input, output, session) {
       Estimate = numeric(),
       Std.Error = numeric(),
       lower.0.95 = numeric(),
-      upper.0.95 = numeric()
-    )
+      upper.0.95 = numeric())
+    
     
     if (input$data_type == "Binary") {
       ffamily <- binomial()  
+    print(input$data_type)
+    print(ffamily)
     } else if (input$data_type == "Continuous") {
       ffamily <- gaussian()  
     }
     
-    ##TODO: not character...
-    form <- as.formula(
-      glue::glue(
-        "{input$outcome_var} ~ {input$progfactors} + {input$treatment_var} + {input$treatment_var}:{input$effmodifier}"))
+    ## build equation
+    
+    progfactors <- input$progfactors %||% ""
+    effmodifier <- input$effmodifier %||% ""
+    
+    interaction_term <- if (!is.null(effmodifier)) {
+      glue::glue("{treatment_var}:{effmodifier}")
+    } else {
+      ""
+    }
+    
+    # collapse all parts into the formula
+    formula_parts <- c(progfactors, treatment_var, interaction_term)
+    rhs <- paste(formula_parts[formula_parts != ""], collapse = " + ")
+    
+    form <- glue::glue("{outcome_var} ~ {rhs}")
+    
+    print(form)
     
     # Run MAIC if selected
     if ("maic" %in% input$models) {
